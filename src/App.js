@@ -58,7 +58,7 @@ export default function App() {
   const [movies, setMovies] = useState([]);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState("");
-  const [watched, setWatched] = useState(tempWatchedData);
+  const [watched, setWatched] = useState([]);
   const [selectedId, setSelectedId] = useState(null);
 
   function handleSelectMovie(id) {
@@ -68,14 +68,20 @@ export default function App() {
   function handleCloseMovie() {
     setSelectedId(null);
   }
+
+  function handleAddWatched() {
+    setWatched((watched) => [...watched, movies]);
+  }
   useEffect(
     function () {
+      const controller = new AbortController();
       async function fetchMovies() {
         try {
           setIsLoading(true);
           setError("");
           const res = await fetch(
-            `http://www.omdbapi.com/?apikey=${KEY}&s=${query}`
+            `http://www.omdbapi.com/?apikey=${KEY}&s=${query}`,
+            { signal: controller.signal }
           );
 
           if (!res.ok)
@@ -86,8 +92,11 @@ export default function App() {
           if (data.Response === "False") throw new Error("Movie not found");
 
           setMovies(data.Search);
+          setError("");
         } catch (err) {
-          setError(err.message);
+          if (err.name !== "AbortError") {
+            setError(err.message);
+          }
         } finally {
           setIsLoading(false);
         }
@@ -99,6 +108,10 @@ export default function App() {
         return;
       }
       fetchMovies();
+
+      return function () {
+        controller.abort();
+      };
     },
     [query]
   );
@@ -125,6 +138,7 @@ export default function App() {
             <MovieDetails
               selectedId={selectedId}
               onCloseMovieDetails={handleCloseMovie}
+              onAddWatched={handleAddWatched}
             />
           ) : (
             <>
@@ -225,8 +239,8 @@ function WatchedMoviesList({ watched }) {
 function WatchedMovie({ movie }) {
   return (
     <li>
-      <img src={movie.Poster} alt={`${movie.Title} poster`} />
-      <h3>{movie.Title}</h3>
+      <img src={movie.poster} alt={`${movie.title} poster`} />
+      <h3>{movie.title}</h3>
       <div>
         <p>
           <span>⭐️</span>
@@ -274,9 +288,10 @@ function WatchedSummary({ watched }) {
     </div>
   );
 }
-function MovieDetails({ selectedId, onCloseMovieDetails }) {
+function MovieDetails({ selectedId, onCloseMovieDetails, onAddWatched }) {
   const [movie, setMovie] = useState({});
   const [isLoading, setIsLoading] = useState(false);
+  const [userRating, setUserRating] = useState("");
 
   const {
     Title: title,
@@ -291,7 +306,33 @@ function MovieDetails({ selectedId, onCloseMovieDetails }) {
     Genre: genre,
   } = movie;
 
-  console.log(title, year);
+  function handleAdd() {
+    const newWatchedMovie = {
+      imdbID: selectedId,
+      title,
+      year,
+      poster,
+      imdbRating: Number(imdbRating),
+      runtime: Number(runtime.split(" ").at(0)),
+      userRating,
+    };
+    onAddWatched(newWatchedMovie);
+    onCloseMovieDetails();
+
+    console.log(newWatchedMovie);
+  }
+
+  useEffect(
+    function () {
+      if (!title) return;
+      document.title = `Movie | ${title}`;
+
+      return function () {
+        document.title = "usePopcorn";
+      };
+    },
+    [title]
+  );
   useEffect(
     function () {
       async function getMovieDetails() {
@@ -338,7 +379,17 @@ function MovieDetails({ selectedId, onCloseMovieDetails }) {
           </header>
           <section>
             <div className="rating">
-              <StarRating maxRating={10} size={24} />
+              <StarRating
+                maxRating={10}
+                size={24}
+                onSetRating={setUserRating}
+              />
+
+              {userRating > 0 && (
+                <button className="btn-add" onClick={handleAdd}>
+                  + Add to list
+                </button>
+              )}
             </div>
             <p>
               <em>{plot}</em>
